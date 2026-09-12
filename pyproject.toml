@@ -1,0 +1,19 @@
+[project]
+name = "comfyui-marigoldv2"
+description = "ComfyUI custom node for Marigold V2 Depth - Log Stage 2"
+version = "1.0.0"
+license = { text = "Apache-2.0" }
+
+dependencies = [
+    "numpy",
+    "Pillow"
+]
+
+[project.urls]
+Repository = "https://github.com/Manivannansvfx/ComfyUI-MarigoldV2"
+Upstream = "https://github.com/huawei-bayerlab/marigold-v2"
+
+[tool.comfy]
+PublisherId = "manivannansvfx"
+DisplayName = "ComfyUI-MarigoldV2"
+Icon = ""
