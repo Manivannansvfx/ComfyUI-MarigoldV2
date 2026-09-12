@@ -32,8 +32,8 @@ class MarigoldV2Depth:
         Depth - Log Stage 2
 
     Backends:
-        native  -> Linux / Comfy Cloud / native Linux ComfyUI
-        wsl     -> Windows ComfyUI calling Marigold V2 inside WSL2
+        native -> Native Linux / managed Linux environment
+        wsl    -> Windows ComfyUI calling Marigold V2 inside WSL2
     """
 
     CATEGORY = "Marigold V2"
@@ -60,7 +60,7 @@ class MarigoldV2Depth:
                 "repo_path": (
                     "STRING",
                     {
-                        "default": "/home/user/marigold-v2",
+                        "default": "",
                         "multiline": False,
                     },
                 ),
@@ -149,16 +149,157 @@ class MarigoldV2Depth:
         }
 
     # ------------------------------------------------------------------
-    # Utility
+    # Native Linux / Cloud Marigold repository detection
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _tensor_to_pil(image_tensor: torch.Tensor) -> Image.Image:
+    def _resolve_native_repo_path(repo_path: str) -> Path:
         """
-        Convert ComfyUI IMAGE tensor [H,W,C] in range 0..1 to PIL RGB.
+        Find the official Marigold V2 repository.
+
+        Search priority:
+
+        1. MARIGOLD_V2_PATH environment variable
+        2. repo_path entered manually in the node
+        3. runtime/marigold-v2 inside this custom node
+        4. vendor/marigold-v2 inside this custom node
+        5. ~/marigold-v2
         """
 
-        image_tensor = image_tensor.detach().cpu().float()
+        candidates = []
+
+        # --------------------------------------------------------------
+        # 1. Environment variable
+        # --------------------------------------------------------------
+
+        env_path = os.environ.get(
+            "MARIGOLD_V2_PATH",
+            "",
+        ).strip()
+
+        if env_path:
+            candidates.append(
+                (
+                    "MARIGOLD_V2_PATH",
+                    Path(
+                        os.path.expandvars(
+                            os.path.expanduser(
+                                env_path
+                            )
+                        )
+                    ),
+                )
+            )
+
+        # --------------------------------------------------------------
+        # 2. Manual repo_path
+        # --------------------------------------------------------------
+
+        if repo_path.strip():
+            candidates.append(
+                (
+                    "repo_path",
+                    Path(
+                        os.path.expandvars(
+                            os.path.expanduser(
+                                repo_path.strip()
+                            )
+                        )
+                    ),
+                )
+            )
+
+        # --------------------------------------------------------------
+        # 3 / 4. Bundled locations
+        # --------------------------------------------------------------
+
+        node_dir = Path(__file__).resolve().parent
+
+        candidates.append(
+            (
+                "runtime",
+                node_dir
+                / "runtime"
+                / "marigold-v2",
+            )
+        )
+
+        candidates.append(
+            (
+                "vendor",
+                node_dir
+                / "vendor"
+                / "marigold-v2",
+            )
+        )
+
+        # --------------------------------------------------------------
+        # 5. Common Linux user location
+        # --------------------------------------------------------------
+
+        candidates.append(
+            (
+                "home",
+                Path.home()
+                / "marigold-v2",
+            )
+        )
+
+        # --------------------------------------------------------------
+        # Validate candidates
+        # --------------------------------------------------------------
+
+        for source, candidate in candidates:
+
+            candidate = candidate.resolve()
+
+            infer_script = (
+                candidate
+                / "scripts"
+                / "infer.py"
+            )
+
+            if infer_script.is_file():
+
+                print(
+                    "[ComfyUI-MarigoldV2] "
+                    f"Using Marigold V2 from {source}: "
+                    f"{candidate}"
+                )
+
+                return candidate
+
+        searched = "\n".join(
+            f"- {source}: {candidate}"
+            for source, candidate in candidates
+        )
+
+        raise FileNotFoundError(
+            "Could not locate the official Marigold V2 repository.\n\n"
+            "Searched:\n"
+            f"{searched}\n\n"
+            "To configure Marigold V2:\n"
+            "1. Set MARIGOLD_V2_PATH, or\n"
+            "2. Enter the repository path in repo_path.\n\n"
+            "Official repository:\n"
+            "https://github.com/huawei-bayerlab/marigold-v2"
+        )
+
+    # ------------------------------------------------------------------
+    # Image conversion
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _tensor_to_pil(
+        image_tensor: torch.Tensor,
+    ) -> Image.Image:
+
+        image_tensor = (
+            image_tensor
+            .detach()
+            .cpu()
+            .float()
+        )
 
         image_tensor = torch.clamp(
             image_tensor,
@@ -167,44 +308,64 @@ class MarigoldV2Depth:
         )
 
         array = (
-            image_tensor.numpy() * 255.0
-        ).round().astype(np.uint8)
+            image_tensor.numpy()
+            * 255.0
+        ).round().astype(
+            np.uint8
+        )
 
         if array.ndim != 3:
             raise RuntimeError(
-                f"Expected IMAGE tensor with 3 dimensions [H,W,C], "
-                f"received shape {array.shape}"
+                "Expected IMAGE tensor with shape "
+                "[H,W,C], received "
+                f"{array.shape}"
             )
 
         if array.shape[-1] == 1:
-            array = np.repeat(array, 3, axis=-1)
+
+            array = np.repeat(
+                array,
+                3,
+                axis=-1,
+            )
 
         elif array.shape[-1] == 4:
+
             array = array[..., :3]
 
         elif array.shape[-1] != 3:
+
             raise RuntimeError(
-                f"Unsupported channel count: {array.shape[-1]}"
+                "Unsupported channel count: "
+                f"{array.shape[-1]}"
             )
 
-        return Image.fromarray(array, mode="RGB")
+        return Image.fromarray(
+            array,
+            mode="RGB",
+        )
 
+    # ------------------------------------------------------------------
+    # Depth loading
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _load_depth_npy(path: Path) -> np.ndarray:
-        """
-        Load Marigold V2 .npy depth prediction and convert to HxW.
-        """
+    def _load_depth_npy(
+        path: Path,
+    ) -> np.ndarray:
 
-        depth = np.load(str(path))
+        depth = np.load(
+            str(path)
+        )
 
         depth = np.asarray(
             depth,
             dtype=np.float32,
         )
 
-        depth = np.squeeze(depth)
+        depth = np.squeeze(
+            depth
+        )
 
         if depth.ndim == 3:
 
@@ -216,12 +377,15 @@ class MarigoldV2Depth:
 
         if depth.ndim != 2:
             raise RuntimeError(
-                f"Unexpected Marigold depth shape "
-                f"{depth.shape} in file:\n{path}"
+                "Unexpected Marigold depth shape "
+                f"{depth.shape} in file:\n"
+                f"{path}"
             )
 
         return depth
 
+    # ------------------------------------------------------------------
+    # Depth normalization
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -231,23 +395,27 @@ class MarigoldV2Depth:
         high_percentile: float,
         invert: bool,
     ) -> np.ndarray:
-        """
-        Percentile-normalize affine-invariant Marigold depth into 0..1.
-        """
 
         depth = depth.astype(
             np.float32,
             copy=False,
         )
 
-        finite_mask = np.isfinite(depth)
+        finite_mask = np.isfinite(
+            depth
+        )
 
-        if not np.any(finite_mask):
+        if not np.any(
+            finite_mask
+        ):
             raise RuntimeError(
-                "Marigold returned a depth map containing no finite values."
+                "Marigold returned a depth map "
+                "containing no finite values."
             )
 
-        valid_values = depth[finite_mask]
+        valid_values = depth[
+            finite_mask
+        ]
 
         low = float(
             np.percentile(
@@ -278,15 +446,21 @@ class MarigoldV2Depth:
             1.0,
         )
 
-        normalized[~finite_mask] = 0.0
+        normalized[
+            ~finite_mask
+        ] = 0.0
 
         if invert:
-            normalized = 1.0 - normalized
+            normalized = (
+                1.0 - normalized
+            )
 
         return normalized.astype(
             np.float32
         )
 
+    # ------------------------------------------------------------------
+    # Windows -> WSL path conversion
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -295,9 +469,12 @@ class MarigoldV2Depth:
         distro: str,
     ) -> str:
 
-        command = ["wsl.exe"]
+        command = [
+            "wsl.exe",
+        ]
 
         if distro.strip():
+
             command += [
                 "-d",
                 distro.strip(),
@@ -317,16 +494,21 @@ class MarigoldV2Depth:
             check=True,
         )
 
-        converted = result.stdout.strip()
+        converted = (
+            result.stdout.strip()
+        )
 
         if not converted:
             raise RuntimeError(
-                f"Failed converting Windows path to WSL path:\n"
+                "Failed converting Windows path "
+                "to WSL path:\n"
                 f"{windows_path}"
             )
 
         return converted
 
+    # ------------------------------------------------------------------
+    # Find Marigold output
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -335,18 +517,10 @@ class MarigoldV2Depth:
         input_stem: str,
     ) -> Path:
 
-        prediction_dir = (
-            output_dir / "predictions_npy"
-        )
-
-        search_root = (
-            prediction_dir
-            if prediction_dir.exists()
-            else output_dir
-        )
-
         candidates = list(
-            search_root.rglob("*.npy")
+            output_dir.rglob(
+                "*.npy"
+            )
         )
 
         exact_matches = [
@@ -368,11 +542,15 @@ class MarigoldV2Depth:
             return contains_matches[0]
 
         raise RuntimeError(
-            "Marigold inference finished but no depth "
-            f".npy file was found for:\n{input_stem}\n\n"
-            f"Output directory:\n{output_dir}"
+            "Marigold inference finished but "
+            "no depth .npy file was found for:\n"
+            f"{input_stem}\n\n"
+            "Output directory:\n"
+            f"{output_dir}"
         )
 
+    # ------------------------------------------------------------------
+    # Validate normalization settings
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -381,12 +559,17 @@ class MarigoldV2Depth:
         high_percentile: float,
     ):
 
-        if low_percentile >= high_percentile:
+        if (
+            low_percentile
+            >= high_percentile
+        ):
             raise ValueError(
-                "low_percentile must be smaller than "
-                "high_percentile."
+                "low_percentile must be smaller "
+                "than high_percentile."
             )
 
+    # ------------------------------------------------------------------
+    # Native Linux command
     # ------------------------------------------------------------------
 
     def _build_native_command(
@@ -401,21 +584,17 @@ class MarigoldV2Depth:
         seed: int,
     ):
 
-        repo = Path(
-            os.path.expanduser(repo_path)
+        repo = (
+            self._resolve_native_repo_path(
+                repo_path
+            )
         )
 
         infer_script = (
-            repo / "scripts" / "infer.py"
+            repo
+            / "scripts"
+            / "infer.py"
         )
-
-        if not infer_script.is_file():
-            raise FileNotFoundError(
-                "Could not find official Marigold V2 "
-                f"inference script:\n{infer_script}\n\n"
-                "repo_path must point to the official "
-                "huawei-bayerlab/marigold-v2 repository."
-            )
 
         python_bin = (
             python_executable.strip()
@@ -440,7 +619,11 @@ class MarigoldV2Depth:
             str(seed),
         ]
 
-        if resolution_mode == "fixed":
+        if (
+            resolution_mode
+            == "fixed"
+        ):
+
             command += [
                 "--width",
                 str(width),
@@ -449,8 +632,13 @@ class MarigoldV2Depth:
                 str(height),
             ]
 
-        return command, repo
+        return (
+            command,
+            repo,
+        )
 
+    # ------------------------------------------------------------------
+    # Windows + WSL command
     # ------------------------------------------------------------------
 
     def _build_wsl_command(
@@ -468,14 +656,19 @@ class MarigoldV2Depth:
 
         if os.name != "nt":
             raise RuntimeError(
-                "WSL backend is intended for Windows ComfyUI."
+                "WSL backend is intended "
+                "for Windows ComfyUI."
             )
 
-        repo_path = repo_path.strip()
+        repo_path = (
+            repo_path.strip()
+        )
 
         if not repo_path:
             raise RuntimeError(
-                "repo_path cannot be empty."
+                "For the WSL backend, repo_path "
+                "must point to the Marigold V2 "
+                "repository inside WSL."
             )
 
         python_executable = (
@@ -488,14 +681,18 @@ class MarigoldV2Depth:
             + "/scripts/infer.py"
         )
 
-        wsl_input = self._windows_path_to_wsl(
-            input_dir,
-            wsl_distro,
+        wsl_input = (
+            self._windows_path_to_wsl(
+                input_dir,
+                wsl_distro,
+            )
         )
 
-        wsl_output = self._windows_path_to_wsl(
-            output_dir,
-            wsl_distro,
+        wsl_output = (
+            self._windows_path_to_wsl(
+                output_dir,
+                wsl_distro,
+            )
         )
 
         command = [
@@ -503,6 +700,7 @@ class MarigoldV2Depth:
         ]
 
         if wsl_distro.strip():
+
             command += [
                 "-d",
                 wsl_distro.strip(),
@@ -510,6 +708,7 @@ class MarigoldV2Depth:
 
         command += [
             "--",
+
             python_executable,
 
             infer_script,
@@ -527,7 +726,11 @@ class MarigoldV2Depth:
             str(seed),
         ]
 
-        if resolution_mode == "fixed":
+        if (
+            resolution_mode
+            == "fixed"
+        ):
+
             command += [
                 "--width",
                 str(width),
@@ -538,6 +741,8 @@ class MarigoldV2Depth:
 
         return command
 
+    # ------------------------------------------------------------------
+    # Main execution
     # ------------------------------------------------------------------
 
     def generate_depth(
@@ -566,16 +771,20 @@ class MarigoldV2Depth:
             torch.Tensor,
         ):
             raise TypeError(
-                "Input image must be a ComfyUI IMAGE tensor."
+                "Input image must be "
+                "a ComfyUI IMAGE tensor."
             )
 
         if image.ndim != 4:
             raise RuntimeError(
                 "Expected ComfyUI IMAGE shape "
-                f"[B,H,W,C], received {tuple(image.shape)}"
+                "[B,H,W,C], received "
+                f"{tuple(image.shape)}"
             )
 
-        batch_size = image.shape[0]
+        batch_size = (
+            image.shape[0]
+        )
 
         if batch_size < 1:
             raise RuntimeError(
@@ -584,16 +793,20 @@ class MarigoldV2Depth:
 
         temp_root = Path(
             tempfile.mkdtemp(
-                prefix="comfyui_marigold_v2_"
+                prefix=(
+                    "comfyui_marigold_v2_"
+                )
             )
         )
 
         input_dir = (
-            temp_root / "input"
+            temp_root
+            / "input"
         )
 
         output_dir = (
-            temp_root / "output"
+            temp_root
+            / "output"
         )
 
         input_dir.mkdir(
@@ -611,23 +824,30 @@ class MarigoldV2Depth:
         try:
 
             # ----------------------------------------------------------
-            # Save ComfyUI images for official Marigold inference
+            # Save ComfyUI input images
             # ----------------------------------------------------------
 
-            for index in range(batch_size):
+            for index in range(
+                batch_size
+            ):
 
                 stem = (
                     f"marigold_input_{index:06d}"
                 )
 
-                input_stems.append(stem)
-
-                image_path = (
-                    input_dir / f"{stem}.png"
+                input_stems.append(
+                    stem
                 )
 
-                pil_image = self._tensor_to_pil(
-                    image[index]
+                image_path = (
+                    input_dir
+                    / f"{stem}.png"
+                )
+
+                pil_image = (
+                    self._tensor_to_pil(
+                        image[index]
+                    )
                 )
 
                 pil_image.save(
@@ -636,7 +856,7 @@ class MarigoldV2Depth:
                 )
 
             # ----------------------------------------------------------
-            # Build command
+            # Build backend command
             # ----------------------------------------------------------
 
             if backend == "native":
@@ -654,7 +874,9 @@ class MarigoldV2Depth:
                     )
                 )
 
-                working_directory = str(repo)
+                working_directory = (
+                    str(repo)
+                )
 
             elif backend == "wsl":
 
@@ -675,9 +897,9 @@ class MarigoldV2Depth:
                 working_directory = None
 
             else:
-
                 raise RuntimeError(
-                    f"Unsupported backend: {backend}"
+                    "Unsupported backend: "
+                    f"{backend}"
                 )
 
             # ----------------------------------------------------------
@@ -685,22 +907,27 @@ class MarigoldV2Depth:
             # ----------------------------------------------------------
 
             print()
+
             print(
                 "[ComfyUI-MarigoldV2] "
-                "Starting Marigold V2 Depth - Log Stage 2"
+                "Starting Marigold V2 "
+                "Depth - Log Stage 2"
             )
 
             print(
-                f"[ComfyUI-MarigoldV2] "
+                "[ComfyUI-MarigoldV2] "
                 f"Backend: {backend}"
             )
 
             print(
-                f"[ComfyUI-MarigoldV2] "
+                "[ComfyUI-MarigoldV2] "
                 f"Images: {batch_size}"
             )
 
-            if resolution_mode == "native":
+            if (
+                resolution_mode
+                == "native"
+            ):
 
                 print(
                     "[ComfyUI-MarigoldV2] "
@@ -711,7 +938,8 @@ class MarigoldV2Depth:
 
                 print(
                     "[ComfyUI-MarigoldV2] "
-                    f"Resolution: {width}x{height}"
+                    f"Resolution: "
+                    f"{width}x{height}"
                 )
 
             process = subprocess.run(
@@ -728,15 +956,15 @@ class MarigoldV2Depth:
                 )
 
             if process.returncode != 0:
-
                 raise RuntimeError(
                     "Marigold V2 inference failed.\n\n"
-                    f"Exit code: {process.returncode}\n\n"
+                    f"Exit code: "
+                    f"{process.returncode}\n\n"
                     f"{process.stdout}"
                 )
 
             # ----------------------------------------------------------
-            # Read Marigold predictions
+            # Read depth predictions
             # ----------------------------------------------------------
 
             depth_images = []
@@ -795,7 +1023,7 @@ class MarigoldV2Depth:
                 )
 
             # ----------------------------------------------------------
-            # Ensure batch output dimensions match
+            # Validate batch dimensions
             # ----------------------------------------------------------
 
             first_shape = (
@@ -804,22 +1032,31 @@ class MarigoldV2Depth:
 
             for item in depth_images:
 
-                if item.shape != first_shape:
+                if (
+                    item.shape
+                    != first_shape
+                ):
                     raise RuntimeError(
-                        "Marigold returned different output "
-                        "resolutions within the same batch. "
-                        "Use fixed resolution for batched images "
-                        "with different source dimensions."
+                        "Marigold returned different "
+                        "output resolutions within "
+                        "the same batch. "
+                        "Use fixed resolution for "
+                        "batched images with different "
+                        "source dimensions."
                     )
 
-            depth_image_batch = torch.stack(
-                depth_images,
-                dim=0,
+            depth_image_batch = (
+                torch.stack(
+                    depth_images,
+                    dim=0,
+                )
             )
 
-            depth_mask_batch = torch.stack(
-                depth_masks,
-                dim=0,
+            depth_mask_batch = (
+                torch.stack(
+                    depth_masks,
+                    dim=0,
+                )
             )
 
             print(
@@ -835,10 +1072,11 @@ class MarigoldV2Depth:
         finally:
 
             # ----------------------------------------------------------
-            # Remove temporary input/output files
+            # Clean temporary files
             # ----------------------------------------------------------
 
             try:
+
                 shutil.rmtree(
                     temp_root,
                     ignore_errors=True,
@@ -853,7 +1091,8 @@ class MarigoldV2Depth:
 # -------------------------------------------------------------------------
 
 NODE_CLASS_MAPPINGS = {
-    "MarigoldV2Depth": MarigoldV2Depth,
+    "MarigoldV2Depth":
+        MarigoldV2Depth,
 }
 
 
