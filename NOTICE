@@ -1,0 +1,32 @@
+ComfyUI-MarigoldV2
+Copyright 2026 Manivannansvfx
+
+This project is an independent ComfyUI integration for Marigold V2.
+
+Marigold V2
+------------
+Marigold V2 was developed by Huawei Bayer Lab.
+
+Official project:
+https://github.com/huawei-bayerlab/marigold-v2
+
+Marigold V2 is licensed under the Apache License 2.0.
+
+This ComfyUI integration is not affiliated with, endorsed by, or an official
+release of Huawei Bayer Lab.
+
+Model Weights
+-------------
+Marigold V2 model weights are not included or redistributed in this repository.
+
+Users obtain the required model assets from the official upstream sources.
+
+Third-Party Components
+----------------------
+Marigold V2 depends on third-party projects and model components, including
+Qwen-Image-Edit-2509.
+
+Those components remain subject to their respective licenses and terms.
+
+This repository's Apache License 2.0 applies only to the original
+ComfyUI integration code contained in this repository.
