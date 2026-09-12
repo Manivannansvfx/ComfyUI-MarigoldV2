@@ -34,9 +34,8 @@ Marigold V2 Depth - Log Stage 2
     +----> depth_image
     |
     +----> depth_mask
-    ```
+```
 
-    
 ## Upstream Project
 
 Marigold V2 was developed by **Huawei Bayer Lab**.
@@ -85,11 +84,26 @@ On Linux, use:
 
 `backend = native`
 
-`repo_path` must point to a working installation of the official Marigold V2 repository.
+The node can locate the official Marigold V2 repository in the following ways:
 
-Example:
+1. `MARIGOLD_V2_PATH` environment variable
+2. Manual `repo_path` entered in the node
+3. Bundled `runtime/marigold-v2`
+4. Bundled `vendor/marigold-v2`
+5. `~/marigold-v2`
+
+Example manual repository path:
 
 `/home/user/marigold-v2`
+
+Example environment variable:
+
+```bash
+MARIGOLD_V2_PATH=/home/user/marigold-v2
+```
+
+If both `MARIGOLD_V2_PATH` and `repo_path` are available,
+`MARIGOLD_V2_PATH` is checked first.
 
 If `python_executable` is left empty, the node uses the current Python executable.
 
@@ -101,7 +115,8 @@ Example:
 
 ## Windows + WSL2
 
-Windows users can run ComfyUI on Windows while running the official Marigold V2 environment inside WSL2.
+Windows users can run ComfyUI on Windows while running the official
+Marigold V2 environment inside WSL2.
 
 Use:
 
@@ -113,6 +128,9 @@ Example configuration:
 - `python_executable`: `/home/user/miniconda3/envs/marigold-v2/bin/python`
 - `wsl_distro`: `Ubuntu`
 
+For the WSL backend, `repo_path` must point to the official Marigold V2
+repository inside WSL.
+
 The exact paths depend on your WSL installation and Linux username.
 
 ## Resolution
@@ -121,7 +139,8 @@ The node provides two resolution modes:
 
 ### Native
 
-Uses the source image resolution, adjusted by the upstream Marigold V2 pipeline where required.
+Uses the source image resolution, adjusted by the upstream Marigold V2
+pipeline where required.
 
 ### Fixed
 
@@ -139,39 +158,53 @@ Higher resolutions require substantially more GPU VRAM.
 
 Marigold V2 produces affine-invariant depth.
 
-The node converts the raw floating-point prediction into a normalized ComfyUI-compatible depth image and mask.
+The node converts the raw floating-point prediction into a normalized
+ComfyUI-compatible depth image and mask.
 
 `low_percentile` and `high_percentile` control normalization.
 
-`invert_depth` can reverse the normalized depth representation for workflows that expect near objects to appear brighter.
+`invert_depth` can reverse the normalized depth representation for workflows
+that expect near objects to appear brighter.
 
 ## Model Downloads
 
 Model weights are **not included in this GitHub repository**.
 
-Required Marigold V2 and Qwen assets must be obtained from their official upstream sources.
+Required Marigold V2 and Qwen assets must be obtained from their official
+upstream sources.
 
-This keeps the ComfyUI integration lightweight and avoids redistributing third-party model files.
+This keeps the ComfyUI integration lightweight and avoids redistributing
+third-party model files.
 
 ## Comfy Cloud
 
-This project is designed with native Linux execution in mind so that it can be evaluated for managed environments such as Comfy Cloud.
+This project is designed for native Linux execution and can be evaluated
+for managed environments such as Comfy Cloud.
 
-Cloud support depends on the platform providing the required Marigold V2 runtime, model assets, Python dependencies, and compatible GPU environment.
+A managed Linux environment can provide the official Marigold V2 runtime
+and expose its location through:
 
-The Windows WSL2 backend is not required for native Linux or Cloud execution.
+```bash
+MARIGOLD_V2_PATH=/path/to/marigold-v2
+```
+
+Cloud support depends on the platform providing the required Marigold V2
+runtime, model assets, Python dependencies, and compatible GPU environment.
+
+The Windows WSL2 backend is only intended for local Windows installations
+and is not required for native Linux or managed Cloud execution.
 
 ## License
 
-The original ComfyUI integration code in this repository is released under the **Apache License 2.0**.
+The original ComfyUI integration code in this repository is released under
+the **Apache License 2.0**.
 
 Marigold V2 remains subject to its upstream license.
 
-Qwen and other third-party components remain subject to their respective licenses and terms.
+Qwen and other third-party components remain subject to their respective
+licenses and terms.
 
 See `NOTICE` for additional attribution information.
-
-
 
 ## Official Marigold V2 Resources
 
@@ -179,14 +212,15 @@ For more information about the original Marigold V2 project:
 
 - Official Repository: https://github.com/huawei-bayerlab/marigold-v2
 - Paper: https://arxiv.org/abs/2609.08084
-- Project Page: https://marigoldmonodepth.github.io/
 
 ## Acknowledgements
 
-Thanks to the Marigold V2 authors and Huawei Bayer Lab for releasing the Marigold V2 project and model family.
+Thanks to the Marigold V2 authors and Huawei Bayer Lab for releasing the
+Marigold V2 project and model family.
 
 ## Disclaimer
 
 This is an independent community integration.
 
-It is not affiliated with, endorsed by, or an official release of Huawei Bayer Lab or the Marigold V2 authors.
+It is not affiliated with, endorsed by, or an official release of
+Huawei Bayer Lab or the Marigold V2 authors.
